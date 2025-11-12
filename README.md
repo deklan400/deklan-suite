@@ -23,12 +23,12 @@
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/deklan400/deklan-suite/main/install.sh)
 ```
-> Satu perintah langsung setup:  
-> ✅ RL-Swarm Node (CPU mode)  
-> ✅ Telegram Bot Panel (bot.py)  
-> ✅ Systemd Service (bot + gensyn + monitor)  
-> ✅ Auto-Monitor & Auto-Heal  
-> ✅ Symlink Keys & Identity  
+> ✅ Satu perintah langsung setup:
+> - RL-Swarm Node (CPU mode)
+> - Telegram Bot Panel (bot.py)
+> - Systemd Service (gensyn, bot, monitor)
+> - Auto-Monitor & Auto-Heal
+> - Symlink Keys & Identity
 
 ---
 
@@ -60,9 +60,7 @@ bash <(curl -s https://raw.githubusercontent.com/deklan400/deklan-suite/main/ins
 │   ├── monitor.service
 │   ├── monitor.timer
 │   └── gensyn.service
-```
-Identity Files:
-```
+
 /root/deklan/
 │── swarm.pem
 │── userApiKey.json
@@ -72,7 +70,6 @@ Identity Files:
 ---
 
 # 🔧 .ENV CONFIG
-Contoh file `.env`:
 ```
 BOT_TOKEN=123456789:ABCDEF...
 CHAT_ID=123456789
@@ -102,36 +99,35 @@ DANGER_PASS=dekpass123
 🧹 Safe Clean  
 ⚠️ Danger Zone  
 
-Command bawaan:
 | Command | Fungsi |
 |----------|--------|
-| `/start` | Tampilkan menu utama |
-| `/status` | Tampilkan CPU, RAM, Disk, Round |
-| `/logs` | Tampilkan log terakhir |
+| `/start` | Menu utama |
+| `/status` | Cek CPU, RAM, Disk, Round |
+| `/logs` | Lihat log terakhir |
 | `/restart` | Restart node |
 | `/help` | Bantuan |
 
 ---
 
 # 🧩 INSTALLER MENU
-Semua perintah diakses via Telegram:  
+Tombol dalam Telegram:  
 - 📦 Install  
 - 🔄 Reinstall  
 - ♻ Update  
 - 🧹 Uninstall  
 
 Flow:
-1️⃣ Klik tombol installer  
-2️⃣ Bot kirim konfirmasi  
+1️⃣ Klik tombol  
+2️⃣ Bot konfirmasi  
 3️⃣ Balas “YES”  
-4️⃣ Proses jalan otomatis  
+4️⃣ Script jalan otomatis  
 
 ---
 
 # ♻ AUTO-MONITOR & SELF-HEAL
 Systemd Timer: `monitor.timer`  
 
-Flow otomatis:  
+Flow:
 1️⃣ Cek status node tiap X menit  
 2️⃣ Jika node down → restart otomatis  
 3️⃣ Jika gagal → reinstall otomatis  
@@ -162,11 +158,11 @@ systemctl enable --now monitor.timer
 systemctl stop gensyn bot monitor.service monitor.timer
 systemctl disable gensyn bot monitor.service monitor.timer
 rm -f /etc/systemd/system/{gensyn,bot,monitor.*}
-rm -rf /root/rl-swarm /opt/deklan-node-bot /root/deklan-suite
+rm -rf /root/rl-swarm /root/deklan-suite
 systemctl daemon-reload
 ```
 
-Identity disimpan aman di:
+Identity tetap aman di:
 ```
 /root/deklan/
 ```
@@ -177,11 +173,11 @@ Identity disimpan aman di:
 | Masalah | Solusi |
 |----------|--------|
 | Node tidak jalan | `systemctl restart gensyn` |
-| Bot diam | `systemctl restart bot` |
+| Bot tidak respon | `systemctl restart bot` |
 | Log kosong | `journalctl -u gensyn -f` |
 | Identity hilang | Cek `/root/deklan` |
 | Disk penuh | Gunakan tombol *Safe Clean* |
-| Docker error | Jalankan `docker system prune -af` |
+| Docker error | `docker system prune -af` |
 | Repo error | Jalankan ulang `install.sh` |
 
 ---
@@ -192,13 +188,13 @@ Identity disimpan aman di:
 /root/deklan/userApiKey.json
 /root/deklan/userData.json
 ```
-> Jangan pernah membagikan file ini. Simpan offline.
+> Jangan pernah membagikan file ini — simpan offline.
 
 ---
 
 # 🌐 NEXT FEATURE ROADMAP
 - Multi-Node Dashboard  
-- Web UI Control Panel  
+- Web UI Panel  
 - Auto-Bot Updater  
 - Remote Deploy Manager  
 - Node Discovery System  
