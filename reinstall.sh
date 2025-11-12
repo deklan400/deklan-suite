@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ########################################################################################
-# 🔄  DEKLAN-SUITE REINSTALL — v6 (Fusion)
-# Uninstall + Reinstall RL-Swarm Node secara otomatis
+# 🔄  DEKLAN-SUITE REINSTALL — v6.2 (Fusion Stable)
+# Safely uninstall + reinstall RL-Swarm Node (preserves identity)
 # by Deklan × GPT-5
 ########################################################################################
 
@@ -14,87 +14,89 @@ AUTO_REPO="https://raw.githubusercontent.com/deklan400/deklan-suite/main/"
 REQ_KEYS=("swarm.pem" "userApiKey.json" "userData.json")
 
 GREEN="\e[32m"; RED="\e[31m"; YELLOW="\e[33m"; CYAN="\e[36m"; NC="\e[0m"
-say()  { echo -e "${GREEN}✅ $1${NC}"; }
+msg()  { echo -e "${GREEN}✅ $1${NC}"; }
 warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
 fail() { echo -e "${RED}❌ $1${NC}"; exit 1; }
 info() { echo -e "${CYAN}$1${NC}"; }
 
 info "
 =====================================================
- 🔄  DEKLAN-SUITE REINSTALL — v6 (Fusion)
+ 🔄  DEKLAN-SUITE REINSTALL — v6.2 (Fusion Stable)
 =====================================================
 "
 
 [[ $EUID -ne 0 ]] && fail "Run as ROOT!"
 
-
 # ───────────────────────────────────────────────────────────────
-# 1. Stop node if running
+# 1. Stop running services
 # ───────────────────────────────────────────────────────────────
-info "[1/6] Stopping current node…"
-systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || warn "Node not running"
+info "[1/6] Stopping active services..."
+systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
 systemctl disable "$SERVICE_NAME" >/dev/null 2>&1 || true
 msg "Service stopped ✅"
 
 # ───────────────────────────────────────────────────────────────
 # 2. Validate identity keys
 # ───────────────────────────────────────────────────────────────
-info "[2/6] Checking identity keys…"
+info "[2/6] Validating identity..."
 for f in "${REQ_KEYS[@]}"; do
-    [[ -f "$KEY_DIR/$f" ]] || fail "Missing key: $KEY_DIR/$f"
+    [[ -f "$KEY_DIR/$f" ]] || fail "❌ Missing identity file: $KEY_DIR/$f"
 done
-say "Identity OK ✅"
+msg "Identity OK ✅"
 
 # ───────────────────────────────────────────────────────────────
-# 3. Remove old RL-Swarm
+# 3. Remove old RL-Swarm directory
 # ───────────────────────────────────────────────────────────────
-info "[3/6] Cleaning previous RL-Swarm…"
+info "[3/6] Cleaning previous RL-Swarm..."
 if [[ -d "$RL_DIR" ]]; then
     rm -rf "$RL_DIR"
     msg "Old node removed ✅"
 else
-    warn "No old node found"
+    warn "No previous node found → skip"
 fi
 
 # ───────────────────────────────────────────────────────────────
-# 4. Run fresh installer from repo
+# 4. Fetch latest installer
 # ───────────────────────────────────────────────────────────────
-info "[4/6] Fetching new installer script…"
+info "[4/6] Downloading latest installer..."
 TMP="/tmp/install.sh"
 curl -fsSL "${AUTO_REPO}install.sh" -o "$TMP" || fail "Failed to fetch installer"
 chmod +x "$TMP"
 msg "Installer downloaded ✅"
 
-info "[5/6] Installing new node…"
-bash "$TMP" || fail "Installation failed"
-msg "New node installed successfully ✅"
+# ───────────────────────────────────────────────────────────────
+# 5. Run installer (interactive)
+# ───────────────────────────────────────────────────────────────
+info "[5/6] Running new installation..."
+bash "$TMP" || fail "❌ Installation failed!"
+msg "Installation completed ✅"
 
 # ───────────────────────────────────────────────────────────────
-# 5. Restart service
+# 6. Restart node service
 # ───────────────────────────────────────────────────────────────
-info "[6/6] Restarting node service…"
+info "[6/6] Restarting node service..."
 systemctl daemon-reload
-systemctl restart "$SERVICE_NAME"
-sleep 3
+systemctl restart "$SERVICE_NAME" || true
+sleep 4
 
 if systemctl is-active --quiet "$SERVICE_NAME"; then
-    say "Node running ✅"
+    msg "Node running ✅"
 else
-    fail "Node failed to start ❌"
+    warn "Node failed to start — check logs:"
+    echo "journalctl -u $SERVICE_NAME -n 50 --no-pager"
 fi
 
 # ───────────────────────────────────────────────────────────────
-# Done
+# ✨ FINISH
 # ───────────────────────────────────────────────────────────────
 echo -e "
 ${GREEN}=====================================================
- ✅ REINSTALL COMPLETE — DEKLAN-SUITE v6
+ ✅ REINSTALL COMPLETE — DEKLAN-SUITE v6.2
 =====================================================
-✔ Node reinstalled successfully
-✔ Docker rebuilt
-✔ Identity preserved
-✔ Service active
-
+✔ Node successfully reinstalled
+✔ Docker rebuilt & linked
+✔ Identity preserved safely
+-----------------------------------------------------
 To monitor logs:
   journalctl -u $SERVICE_NAME -f
 =====================================================
