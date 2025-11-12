@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ########################################################################################
-# 🚀 DEKLAN-SUITE INSTALLER — v6.1 (Fusion Stable)
+# 🚀 DEKLAN-SUITE INSTALLER — v6.2 (Fusion Stable)
 # Gensyn RL-Swarm (CPU) + Telegram Bot + Monitor (service & timer)
 # by Deklan × GPT-5
 ########################################################################################
@@ -29,19 +29,19 @@ info(){ echo -e "${CYAN}$1${NC}"; }
 
 info "
 =====================================================
-🔥  DEKLAN-SUITE INSTALLER — v6.1 (Fusion Stable)
+🔥  DEKLAN-SUITE INSTALLER — v6.2 (Fusion Stable)
 =====================================================
 "
 
 [[ $EUID -ne 0 ]] && fail "Run as ROOT!"
 
-# ── 0) Base deps ─────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 info "[0/9] Installing base deps…"
 apt update -y >/dev/null
 apt install -y curl git jq ca-certificates gnupg build-essential lsb-release python3 python3-venv python3-pip >/dev/null
 msg "Base deps OK"
 
-# ── 1) Identity ──────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 info "[1/9] Checking identity files in $IDENTITY_DIR"
 mkdir -p "$IDENTITY_DIR"
 for f in "${REQUIRED_FILES[@]}"; do
@@ -49,18 +49,13 @@ for f in "${REQUIRED_FILES[@]}"; do
 done
 msg "Identity OK ✅"
 
-# ── 2) Docker ────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 info "[2/9] Installing Docker…"
 if ! command -v docker >/dev/null 2>&1; then
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
   chmod a+r /etc/apt/keyrings/docker.gpg
-  echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-  > /etc/apt/sources.list.d/docker.list
-
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
   apt update -y >/dev/null
   apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null
   systemctl enable --now docker
@@ -70,7 +65,7 @@ else
   systemctl enable --now docker || true
 fi
 
-# ── 3) RL-Swarm ───────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 info "[3/9] Fetch RL-Swarm repo…"
 if [[ ! -d "$RL_DIR/.git" ]]; then
   git clone "$REPO_RLSWARM" "$RL_DIR" >/dev/null 2>&1 || fail "Clone failed"
@@ -82,12 +77,12 @@ else
 fi
 msg "RL-Swarm ready ✅"
 
-# ── 4) Keys link ──────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 rm -rf "$RL_DIR/keys" 2>/dev/null || true
 ln -s "$IDENTITY_DIR" "$RL_DIR/keys"
 msg "Symlink keys → OK ✅"
 
-# ── 5) Docker build ───────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 if docker compose version >/dev/null 2>&1; then
   COMPOSE="docker compose"
 else
@@ -99,7 +94,7 @@ $COMPOSE build swarm-cpu || true
 popd >/dev/null
 msg "Docker images OK ✅"
 
-# ── 6) gensyn.service ─────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 info "[6/9] Creating gensyn.service …"
 cat >"/etc/systemd/system/${SERVICE_NODE}.service" <<EOF
 [Unit]
@@ -119,6 +114,7 @@ User=root
 LimitNOFILE=65535
 StandardOutput=journal
 StandardError=journal
+
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -127,7 +123,7 @@ systemctl daemon-reload
 systemctl enable --now "$SERVICE_NODE"
 msg "Node service installed ✅"
 
-# ── 7) Telegram Bot ───────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 info "[7/9] Installing Telegram Bot…"
 mkdir -p "$BOT_DIR"
 curl -fsSL "$REPO_SUITE/raw/main/bot.py" -o "$BOT_DIR/bot.py" || fail "bot.py fetch failed"
@@ -136,13 +132,10 @@ python-telegram-bot==21.6
 psutil==6.0.0
 REQ
 python3 -m venv "$BOT_DIR/.venv"
-source "$BOT_DIR/.venv/bin/activate"
-pip install --upgrade pip >/dev/null
-pip install -r "$BOT_DIR/requirements.txt" >/dev/null
-deactivate
+"$BOT_DIR/.venv/bin/pip" install --upgrade pip >/dev/null
+"$BOT_DIR/.venv/bin/pip" install -r "$BOT_DIR/requirements.txt" >/dev/null
 msg "Bot venv ready ✅"
 
-# ── .env setup ────────────────────────────────────────
 read -rp "🔑 BOT_TOKEN: " BOT_TOKEN
 read -rp "👤 CHAT_ID (admin): " CHAT_ID
 read -rp "➕ ALLOWED_USER_IDS (comma, optional): " ALLOWED
@@ -169,8 +162,8 @@ EOF
 chmod 600 "$BOT_DIR/.env"
 msg ".env created ✅"
 
-# ── bot.service FIX ───────────────────────────────────
-info "[7b/9] Installing bot.service (fixed strict mode)…"
+# ──────────────────────────────────────────────────────────────
+info "[7b/9] Installing bot.service (v6.2 fixed paths)…"
 cat >"/etc/systemd/system/${SERVICE_BOT}.service" <<EOF
 [Unit]
 Description=Deklan Suite Bot (Telegram Control)
@@ -180,23 +173,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-Group=root
 WorkingDirectory=$BOT_DIR
 EnvironmentFile=-$BOT_DIR/.env
-Environment="PATH=$BOT_DIR/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="PYTHONUNBUFFERED=1"
-Environment="PYTHONIOENCODING=UTF-8"
-
-ExecStart=/bin/bash -c '
-  PYBIN="$BOT_DIR/.venv/bin/python"
-  if [ -x "\$PYBIN" ]; then
-      exec "\$PYBIN" "\$BOT_DIR/bot.py"
-  else
-      echo "[WARN] Using system python3"
-      exec python3 "\$BOT_DIR/bot.py"
-  fi
-'
-
+ExecStart=$BOT_DIR/.venv/bin/python $BOT_DIR/bot.py
 Restart=always
 RestartSec=3
 StandardOutput=journal
@@ -211,23 +190,20 @@ systemctl daemon-reload
 systemctl enable --now "$SERVICE_BOT"
 msg "Bot service installed ✅"
 
-# ── 8) Monitor service + timer ────────────────────────
+# ──────────────────────────────────────────────────────────────
 info "[8/9] Installing monitor.timer …"
 cat >"/etc/systemd/system/monitor.service" <<EOF
 [Unit]
 Description=Deklan Suite Monitor
 After=network-online.target
+
 [Service]
 Type=oneshot
 WorkingDirectory=$BOT_DIR
-ExecStart=/bin/bash -c '
-  PYBIN="$BOT_DIR/.venv/bin/python"
-  if [ -x "\$PYBIN" ]; then
-      exec "\$PYBIN" monitor.py
-  else
-      exec python3 monitor.py
-  fi
-'
+EnvironmentFile=-$BOT_DIR/.env
+ExecStart=$BOT_DIR/.venv/bin/python $BOT_DIR/monitor.py
+StandardOutput=journal
+StandardError=journal
 EOF
 
 cat >"/etc/systemd/system/monitor.timer" <<'EOF'
@@ -248,10 +224,10 @@ systemctl daemon-reload
 systemctl enable --now monitor.timer
 msg "Monitor timer installed ✅"
 
-# ── 9) Done ───────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 echo -e "
 ${GREEN}=====================================================
- ✅ INSTALL COMPLETE — DEKLAN-SUITE v6.1 (Fusion Stable)
+ ✅ INSTALL COMPLETE — DEKLAN-SUITE v6.2 (Fusion Stable)
 =====================================================
 ✔ RL-Swarm Node
 ✔ Telegram Control Bot
