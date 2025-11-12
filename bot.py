@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-  DEKLAN-SUITE BOT v3.5 FUSION CINEMATIC
+  DEKLAN-SUITE BOT v3.6 FUSION STABLE
   Unified Node + Telegram Control System + Auto Notify Integration
   by Deklan × GPT-5
 """
 
-import os
-import time
-import subprocess
-import psutil
+import os, time, subprocess, psutil, traceback
 from datetime import timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 # ======================================================
-# ENVIRONMENT SETUP
+# LOAD ENV (.env fallback)
 # ======================================================
+def load_env_file(path=".env"):
+    if not os.path.exists(path): return
+    with open(path) as f:
+        for line in f:
+            if "=" in line and not line.strip().startswith("#"):
+                k, v = line.strip().split("=", 1)
+                os.environ.setdefault(k, v)
+
+load_env_file(os.path.join(os.path.dirname(__file__), ".env"))
+
 env = os.getenv
 
 BOT_TOKEN = env("BOT_TOKEN", "")
@@ -33,10 +40,10 @@ ALLOWED_USER_IDS = [i.strip() for i in env("ALLOWED_USER_IDS", "").split(",") if
 ENABLE_DANGER = env("ENABLE_DANGER_ZONE", "0") == "1"
 DANGER_PASS   = env("DANGER_PASS", "")
 
-REQUIRED_FILES = ["swarm.pem", "userApiKey.json", "userData.json"]
-
 if not BOT_TOKEN or not CHAT_ID:
-    raise SystemExit("❌ BOT_TOKEN / CHAT_ID missing — edit .env then restart bot")
+    print("❌ Missing BOT_TOKEN / CHAT_ID in .env")
+    time.sleep(3)
+    exit(1)
 
 # ======================================================
 # UTILITIES
@@ -56,15 +63,18 @@ def _authorized(update: Update) -> bool:
     return uid == CHAT_ID or uid in ALLOWED_USER_IDS
 
 async def _send_long(upd_msg, text: str):
-    CHUNK = 3800
+    CHUNK = 3500
     parts = [text[i:i+CHUNK] for i in range(0, len(text), CHUNK)]
     first = True
     for p in parts:
-        if first and hasattr(upd_msg, "edit_message_text"):
-            await upd_msg.edit_message_text(p, parse_mode="Markdown")
-            first = False
-        else:
-            await upd_msg.message.reply_text(p, parse_mode="Markdown")
+        try:
+            if first and hasattr(upd_msg, "edit_message_text"):
+                await upd_msg.edit_message_text(p, parse_mode="Markdown")
+                first = False
+            else:
+                await upd_msg.message.reply_text(p, parse_mode="Markdown")
+        except Exception:
+            continue
 
 # ======================================================
 # SYSTEM OPS
@@ -109,19 +119,19 @@ def _run_remote(fname: str) -> str:
         return e.output or "ERR"
 
 def _notify(title: str, msg: str):
-    if not BOT_TOKEN or not CHAT_ID:
-        return
-    text = f"⚙️ *Deklan-Suite Auto Report*\n━━━━━━━━━━━━━━\n🖥 Host: `{os.uname().nodename}`\n🕒 {time.strftime('%Y-%m-%d %H:%M:%S')}\n━━━━━━━━━━━━━━\n*{title}*\n```\n{msg[:1800]}\n```"
-    _shell(f"curl -s -X POST 'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage' -d chat_id={CHAT_ID} -d parse_mode=Markdown -d text=\"{text}\" >/dev/null 2>&1 || true")
+    try:
+        text = f"⚙️ *Deklan-Suite Auto Report*\n━━━━━━━━━━━━━━\n🖥 Host: `{os.uname().nodename}`\n🕒 {time.strftime('%Y-%m-%d %H:%M:%S')}\n━━━━━━━━━━━━━━\n*{title}*\n```\n{msg[:1800]}\n```"
+        _shell(f"curl -s -X POST 'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage' -d chat_id={CHAT_ID} -d parse_mode=Markdown -d text=\"{text}\" >/dev/null 2>&1 || true")
+    except Exception:
+        pass
 
 # ======================================================
-# PANEL CINEMATIC
+# PANEL / UI
 # ======================================================
 def _bar(v: str) -> str:
     try:
         val = float("".join(c for c in v if (c.isdigit() or c == ".")))
         filled = int(round(val / 10))
-        filled = max(0, min(10, filled))
         return "◼" * filled + "◻" * (10 - filled)
     except:
         return "◻" * 10
@@ -132,18 +142,13 @@ def _panel(name: str, service: str, stats: str, rnd: str) -> str:
         if ":" in ln:
             k, v = ln.split(":", 1)
             d[k.strip()] = v.strip()
-    cpu   = d.get("CPU", "0%")
-    ram   = d.get("RAM", "0%")
-    disk  = d.get("Disk", "0%")
-    up    = d.get("Uptime", "--")
-
-    cpu_b  = _bar(cpu)
-    ram_b  = _bar(ram)
-    disk_b = _bar(disk)
-    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    cpu = d.get("CPU", "0%")
+    ram = d.get("RAM", "0%")
+    disk = d.get("Disk", "0%")
+    up = d.get("Uptime", "--")
 
     return f"""```
-████  DEKLAN-SUITE STATUS DASHBOARD  ████
+████  DEKLAN-SUITE DASHBOARD  ████
 
  Node       : {name}
  Service    : {service}
@@ -151,16 +156,9 @@ def _panel(name: str, service: str, stats: str, rnd: str) -> str:
  Round      : {rnd}
  Uptime     : {up}
 
- ── Resources ───────────────
- CPU        : {cpu:<8} {cpu_b}
- RAM        : {ram:<8} {ram_b}
- Disk       : {disk:<8} {disk_b}
-
- ── System ─────────────────
- Identity   : {'✅ Valid' if os.path.isdir(KEY_DIR) else '⚠ Missing'}
- Docker     : {'✅ OK' if 'docker' in _shell('which docker || echo') else '⚠ N/A'}
-
- Last Sync  : {ts}
+ CPU  {cpu:<8} {_bar(cpu)}
+ RAM  {ram:<8} {_bar(ram)}
+ DISK {disk:<8} {_bar(disk)}
 ```"""
 
 # ======================================================
@@ -169,37 +167,17 @@ def _panel(name: str, service: str, stats: str, rnd: str) -> str:
 def _main_menu():
     rows = [
         [InlineKeyboardButton("📊 Status", callback_data="status")],
-        [InlineKeyboardButton("🟢 Start Node", callback_data="start"),
-         InlineKeyboardButton("🔴 Stop Node", callback_data="stop")],
+        [InlineKeyboardButton("🟢 Start", callback_data="start"),
+         InlineKeyboardButton("🔴 Stop", callback_data="stop")],
         [InlineKeyboardButton("🔁 Restart", callback_data="restart")],
         [InlineKeyboardButton("📜 Logs", callback_data="logs")],
-        [InlineKeyboardButton("🧩 Smart Installer", callback_data="installer")],
-        [InlineKeyboardButton("🧹 Safe Clean", callback_data="clean")],
-        [InlineKeyboardButton("⚙ Auto-Update Check", callback_data="update_check")],
-        [InlineKeyboardButton("❓ Help", callback_data="help")]
+        [InlineKeyboardButton("🧹 Clean", callback_data="clean")],
+        [InlineKeyboardButton("🧩 Installer", callback_data="installer")],
+        [InlineKeyboardButton("⚙ Update", callback_data="update_check")]
     ]
     if ENABLE_DANGER:
         rows.append([InlineKeyboardButton("⚠️ Danger Zone", callback_data="danger")])
     return InlineKeyboardMarkup(rows)
-
-def _installer_menu():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📦 Install", callback_data="inst_install")],
-        [InlineKeyboardButton("🔄 Reinstall", callback_data="inst_reinstall")],
-        [InlineKeyboardButton("♻ Update", callback_data="inst_update")],
-        [InlineKeyboardButton("🧹 Uninstall", callback_data="inst_uninstall")],
-        [InlineKeyboardButton("⬅ Back", callback_data="back")]
-    ])
-
-def _danger_menu():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔥 Remove Node", callback_data="dz_rm_node")],
-        [InlineKeyboardButton("🐋 Clean Docker", callback_data="dz_rm_docker")],
-        [InlineKeyboardButton("💾 Remove Swap", callback_data="dz_rm_swap")],
-        [InlineKeyboardButton("🧹 Full Clean", callback_data="dz_clean_all")],
-        [InlineKeyboardButton("💣 Reboot VPS", callback_data="dz_reboot")],
-        [InlineKeyboardButton("⬅ Back", callback_data="back")]
-    ])
 
 # ======================================================
 # CALLBACK HANDLER
@@ -217,12 +195,11 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action in ["start", "stop", "restart"]:
         _shell(f"systemctl {action} {SERVICE_NODE}")
-        _notify(f"Node {action.title()}ed", f"{SERVICE_NODE} service {action} complete.")
-        return await q.edit_message_text(f"✅ Node {action} executed.", reply_markup=_main_menu())
+        _notify(f"Node {action}", f"{SERVICE_NODE} {action}ed.")
+        return await q.edit_message_text(f"✅ Node {action}ed.", reply_markup=_main_menu())
 
     if action == "logs":
-        logs = _logs()
-        return await _send_long(q, f"📜 *Last logs*\n```\n{logs}\n```")
+        return await _send_long(q, f"📜 *Logs*\n```\n{_logs()}\n```")
 
     if action == "clean":
         res = _clean()
@@ -230,70 +207,42 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await q.edit_message_text(res, reply_markup=_main_menu())
 
     if action == "installer":
-        return await q.edit_message_text("🧩 *Smart Installer*", parse_mode="Markdown", reply_markup=_installer_menu())
-
-    if action.startswith("inst_"):
-        mode = action.split("_", 1)[1]
-        fname = {
-            "install": "install.sh",
-            "reinstall": "reinstall.sh",
-            "update": "update.sh",
-            "uninstall": "uninstall.sh"
-        }.get(mode, "install.sh")
-        result = _run_remote(fname)
-        _notify(f"⚙️ {mode.title()} Complete", result[:800])
-        return await _send_long(q, f"✅ Done\n```\n{result}\n```")
+        return await q.edit_message_text("🧩 Smart Installer", reply_markup=_main_menu())
 
     if action == "update_check":
         result = _run_remote("autoupdate.sh")
         return await _send_long(q, f"🔎 *Auto-Update Check*\n```\n{result}\n```")
 
     if action == "danger":
-        return await q.edit_message_text("⚠️ *Danger Zone*", parse_mode="Markdown", reply_markup=_danger_menu())
-
-    if action.startswith("dz_"):
-        context.user_data["awaiting_password"] = action
-        return await q.edit_message_text(f"⚠️ `{action.replace('dz_', '').upper()}` — Enter Danger Password:", parse_mode="Markdown")
-
-    if action == "back":
-        return await q.edit_message_text("⚡ Main Menu", reply_markup=_main_menu())
+        context.user_data["awaiting_password"] = "dz_reboot"
+        return await q.edit_message_text("⚠️ Enter Danger Password:", parse_mode="Markdown")
 
 # ======================================================
 # TEXT HANDLER
 # ======================================================
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-
     if "awaiting_password" in context.user_data:
-        action = context.user_data.pop("awaiting_password")
         if text != DANGER_PASS:
-            return await update.message.reply_text("❌ Wrong password")
-        await update.message.reply_text("✅ Verified! Running…")
-        if action == "dz_rm_node":
-            res = _shell(f"systemctl stop {SERVICE_NODE}; rm -rf {RL_DIR}")
-        elif action == "dz_rm_docker":
-            res = _shell("docker system prune -af")
-        elif action == "dz_rm_swap":
-            res = _shell("swapoff -a; rm -f /swapfile; sed -i '/swapfile/d' /etc/fstab")
-        elif action == "dz_clean_all":
-            res = _shell(f"systemctl stop {SERVICE_NODE}; rm -rf {RL_DIR}; docker system prune -af; swapoff -a; rm -f /swapfile")
-        elif action == "dz_reboot":
-            res = "Rebooting VPS…"
-            _shell("reboot")
-        else:
-            res = "Unknown danger action"
-        _notify("⚠️ Danger Executed", res)
-        return await _send_long(update, f"✅ Done\n```\n{res}\n```")
+            return await update.message.reply_text("❌ Wrong password.")
+        await update.message.reply_text("✅ Verified, rebooting…")
+        _shell("reboot")
 
 # ======================================================
 # MAIN LOOP
 # ======================================================
 def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CallbackQueryHandler(handle_button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    print("✅ DEKLAN-SUITE BOT v3.5 FUSION running...")
-    app.run_polling()
+    while True:
+        try:
+            app = ApplicationBuilder().token(BOT_TOKEN).build()
+            app.add_handler(CallbackQueryHandler(handle_button))
+            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+            print("✅ DEKLAN-SUITE BOT v3.6 FUSION running...")
+            app.run_polling()
+        except Exception as e:
+            print("❌ Error:", e)
+            traceback.print_exc()
+            time.sleep(10)
 
 if __name__ == "__main__":
     main()
