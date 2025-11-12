@@ -1,0 +1,29 @@
+[Unit]
+Description=🩺 Deklan Suite Monitor (Auto-Heal v3.6)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/deklan-node-bot/monitor.py
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/deklan-node-bot
+EnvironmentFile=-/opt/deklan-node-bot/.env
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONIOENCODING=UTF-8"
+Environment="PATH=/opt/deklan-node-bot/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+
+ExecStart=/bin/bash -c '
+  PYBIN="/opt/deklan-node-bot/.venv/bin/python"
+  if [ -x "$PYBIN" ]; then
+      echo "[MONITOR] Using virtualenv Python"
+      exec "$PYBIN" "/opt/deklan-node-bot/monitor.py"
+  else
+      echo "[MONITOR] Using system Python"
+      exec /usr/bin/python3 "/opt/deklan-node-bot/monitor.py"
+  fi
+'
+
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65535
