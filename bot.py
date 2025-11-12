@@ -1,37 +1,52 @@
 #!/usr/bin/env python3
-# bot.py — Deklan-Bot v3 FULL BUTTON MODE
+# -*- coding: utf-8 -*-
+"""
+  DEKLAN-SUITE BOT v3.1 — Full Button Smart Panel (CINEMATIC)
+  Unified Node + Telegram Control System
+  by Deklan × GPT-5
+"""
+
 import os
-import subprocess
 import time
-from datetime import timedelta
+import subprocess
 import psutil
-
+from datetime import timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, MessageHandler, CommandHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
-# --------------------
-# Config (via env or default)
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-CHAT_ID = str(os.getenv("CHAT_ID", ""))
-ALLOWED_USER_IDS = [i.strip() for i in os.getenv("ALLOWED_USER_IDS", "").split(",") if i.strip()]
-KEY_DIR = os.getenv("KEY_DIR", "/root/deklan")
-BASE_DIR = os.getenv("BASE_DIR", "/root/deklan-suite")
-SERVICE_NAME = os.getenv("SERVICE_NAME", "deklan-bot")
-DOCKER_COMPOSE_CMD = os.getenv("DOCKER_COMPOSE_CMD", "docker compose run --rm --build -Pit swarm-cpu")
-LOG_LINES = int(os.getenv("LOG_LINES", "80"))
-ENABLE_DANGER = os.getenv("ENABLE_DANGER_ZONE", "0") == "1"
-DANGER_PASS = os.getenv("DANGER_PASS", "")
+# ======================================================
+# ENVIRONMENT
+# ======================================================
+env = os.getenv
+
+BOT_TOKEN = env("BOT_TOKEN", "")
+CHAT_ID   = str(env("CHAT_ID", ""))
+NODE_NAME = env("NODE_NAME", "deklan-node")
+
+SERVICE_NODE = env("SERVICE_NAME", "gensyn")
+LOG_LINES = int(env("LOG_LINES", "80"))
+RL_DIR    = env("RL_DIR", "/root/rl-swarm")
+KEY_DIR   = env("KEY_DIR", "/root/deklan")
+AUTO_REPO = env("AUTO_INSTALLER_GITHUB", "https://raw.githubusercontent.com/deklan400/deklan-suite/main/")
+LOG_MAX   = int(env("LOG_MAX_CHARS", "3500"))
+
+ALLOWED_USER_IDS = [i.strip() for i in env("ALLOWED_USER_IDS", "").split(",") if i.strip()]
+ENABLE_DANGER = env("ENABLE_DANGER_ZONE", "0") == "1"
+DANGER_PASS   = env("DANGER_PASS", "")
 
 REQUIRED_FILES = ["swarm.pem", "userapikey.json", "userData.json"]
 
 if not BOT_TOKEN or not CHAT_ID:
-    raise SystemExit("BOT_TOKEN and CHAT_ID required in env")
+    raise SystemExit("❌ BOT_TOKEN / CHAT_ID missing — edit .env then restart bot")
 
+# ======================================================
+# HELPERS
+# ======================================================
 def _shell(cmd: str) -> str:
     try:
-        return subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, text=True)
+        return subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, text=True).strip()
     except subprocess.CalledProcessError as e:
-        return e.output or str(e)
+        return (e.output or "").strip()
 
 def _authorized(update: Update) -> bool:
     uid = str(update.effective_user.id)
@@ -41,276 +56,294 @@ def _authorized(update: Update) -> bool:
         return uid == CHAT_ID
     return uid == CHAT_ID or uid in ALLOWED_USER_IDS
 
-def check_starter_files() -> (bool, list):
+async def _send_long(upd_msg, text: str):
+    CHUNK = 3800
+    if len(text) <= CHUNK:
+        # if upd_msg is a CallbackQuery, reply_text is on upd_msg.message
+        if hasattr(upd_msg, "edit_message_text"):
+            return await upd_msg.edit_message_text(text, parse_mode="Markdown")
+        return await upd_msg.message.reply_text(text, parse_mode="Markdown")
+    parts = [text[i:i+CHUNK] for i in range(0, len(text), CHUNK)]
+    if hasattr(upd_msg, "edit_message_text"):
+        await upd_msg.edit_message_text(parts[0], parse_mode="Markdown")
+    else:
+        await upd_msg.message.reply_text(parts[0], parse_mode="Markdown")
+    for p in parts[1:]:
+        await upd_msg.message.reply_text(p, parse_mode="Markdown")
+
+# ======================================================
+# SYSTEM OPS
+# ======================================================
+def _check_starter_files() -> list:
     missing = []
     for f in REQUIRED_FILES:
         if not os.path.isfile(os.path.join(KEY_DIR, f)):
             missing.append(f)
-    return (len(missing) == 0, missing)
+    return missing
 
-def system_stats() -> str:
+def _stats() -> str:
     try:
-        cpu = psutil.cpu_percent(interval=0.4)
+        cpu = psutil.cpu_percent(interval=0.5)
         vm = psutil.virtual_memory()
         du = psutil.disk_usage("/")
-        up = str(timedelta(seconds=int(time.time() - psutil.boot_time())))
-        return f"CPU: {cpu:.1f}%\nRAM: {vm.percent:.1f}% ({vm.used//(1024**3)}G/{vm.total//(1024**3)}G)\nDisk: {du.percent:.1f}%\nUptime: {up}"
-    except Exception as e:
-        return f"(stats error: {e})"
+        uptime = str(timedelta(seconds=int(time.time() - psutil.boot_time())))
+        # return structured lines similar to previous code to feed _panel
+        return f"CPU: {cpu:.1f}%\nRAM: {vm.percent:.1f}%\nDisk: {du.percent:.1f}%\nUptime: {uptime}"
+    except Exception:
+        return "(system stats unavailable)"
 
-# --------------------
-# Keyboards
-def main_menu():
-    ok, missing = check_starter_files()
-    installer_btn = InlineKeyboardButton("🧩 Smart Installer", callback_data="installer")
-    status_btn = InlineKeyboardButton("📊 Status", callback_data="status")
-    start_btn = InlineKeyboardButton("🟢 Start", callback_data="start")
-    stop_btn = InlineKeyboardButton("🔴 Stop", callback_data="stop")
-    restart_btn = InlineKeyboardButton("🔁 Restart", callback_data="restart")
-    logs_btn = InlineKeyboardButton("📜 Logs", callback_data="logs")
-    round_btn = InlineKeyboardButton("ℹ️ Round", callback_data="round")
-    safeclean_btn = InlineKeyboardButton("🧹 Safe Clean", callback_data="safe_clean")
-    swap_btn = InlineKeyboardButton("💾 Swap Manager", callback_data="swap")
-    danger_btn = InlineKeyboardButton("⚠️ Danger Zone", callback_data="dz") if ENABLE_DANGER else None
+def _logs() -> str:
+    return _shell(f"journalctl -u {SERVICE_NODE} -n {LOG_LINES} --no-pager")[:LOG_MAX]
 
-    rows = [
-        [status_btn],
-        [start_btn, stop_btn],
-        [restart_btn],
-        [logs_btn, round_btn],
-        [safeclean_btn],
-        [swap_btn],
-        [installer_btn]
+def _start(): _shell(f"systemctl start {SERVICE_NODE}")
+def _stop(): _shell(f"systemctl stop {SERVICE_NODE}")
+def _restart(): _shell(f"systemctl restart {SERVICE_NODE}")
+def _round():
+    cmd = f"journalctl -u {SERVICE_NODE} --no-pager | grep -E 'Joining round:' | tail -n1"
+    return _shell(cmd) or "(round info not found)"
+
+def _clean():
+    cmds = [
+        "docker image prune -f",
+        "docker container prune -f",
+        "apt autoremove -y",
+        "apt clean",
+        "journalctl --vacuum-size=200M",
+        "rm -rf /tmp/*"
     ]
-    if danger_btn:
-        rows.append([danger_btn])
+    for c in cmds: _shell(c)
+    return "🧹 System cleaned successfully"
 
-    # If starter missing show helper
-    if not ok:
-        rows.insert(0, [InlineKeyboardButton("⚠️ Starter Missing", callback_data="starter_missing")])
+def _run_remote(fname: str) -> str:
+    url = f"{AUTO_REPO}{fname}"
+    tmp = f"/tmp/{fname}"
+    try:
+        subprocess.check_output(f"curl -s -o {tmp} {url}", shell=True)
+        subprocess.check_output(f"chmod +x {tmp}", shell=True)
+        return subprocess.check_output(f"bash {tmp}", shell=True, stderr=subprocess.STDOUT, text=True)
+    except subprocess.CalledProcessError as e:
+        return e.output or "ERR"
 
+# ======================================================
+# PANEL (CINEMATIC STATUS) - robust escaping for Telegram
+# ======================================================
+def _escape_inline(text: str) -> str:
+    # minimal escape for characters that break Markdown code block / formatting
+    return text.replace("`", "'")
+
+def _bar(v: str) -> str:
+    try:
+        # v like "12.3%" or "12%"
+        val = float("".join(c for c in v if (c.isdigit() or c == ".")))
+        filled = int(round(val / 10))
+        if filled < 0: filled = 0
+        if filled > 10: filled = 10
+        return "◼" * filled + "◻" * (10 - filled)
+    except:
+        return "◻" * 10
+
+def _panel(name: str, service: str, stats: str, rnd: str) -> str:
+    d = {}
+    for ln in stats.splitlines():
+        if ":" in ln:
+            k, v = ln.split(":", 1)
+            d[k.strip()] = v.strip()
+
+    cpu   = d.get("CPU", "0%")
+    ram   = d.get("RAM", "0%")
+    disk  = d.get("Disk", "0%")
+    up    = d.get("Uptime", "--")
+
+    cpu_b  = _bar(cpu)
+    ram_b  = _bar(ram)
+    disk_b = _bar(disk)
+
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    def esc(x: str) -> str:
+        if x is None:
+            return ""
+        return _escape_inline(str(x))
+
+    # Compose text inside a code block (```…```) to keep fixed-width and prevent Markdown issues
+    txt = (
+        "```\n"
+        "████  GENSYN QUANTUM STATUS  ████\n\n"
+        f"Node       : {esc(name)}\n"
+        f"Service    : {esc(service)}\n"
+        f"Status     : ✅ RUNNING\n"
+        f"Round      : {esc(rnd)}\n"
+        f"Uptime     : {esc(up)}\n\n"
+        "── Resources ─────────────────────\n"
+        f"CPU        : {cpu:<8} {cpu_b}\n"
+        f"RAM        : {ram:<8} {ram_b}\n"
+        f"Disk       : {disk:<8} {disk_b}\n"
+        "Temp       : -- °C\n\n"
+        "── System ────────────────────────\n"
+        f"Identity   : {'✅ Valid' if os.path.isdir(KEY_DIR) else '⚠ Missing'}\n"
+        f"Docker     : {'✅ OK' if 'docker' in _shell('which docker || echo') else '⚠ N/A'}\n\n"
+        f"Last Sync  : {ts}\n"
+        "```"
+    )
+    return txt
+
+# ======================================================
+# MENUS
+# ======================================================
+def _main_menu():
+    rows = [
+        [InlineKeyboardButton("📊 Status", callback_data="status")],
+        [InlineKeyboardButton("🟢 Start Node", callback_data="start"),
+         InlineKeyboardButton("🔴 Stop Node", callback_data="stop")],
+        [InlineKeyboardButton("🔁 Restart", callback_data="restart")],
+        [InlineKeyboardButton("📜 Logs", callback_data="logs")],
+        [InlineKeyboardButton("🧩 Smart Installer", callback_data="installer")],
+        [InlineKeyboardButton("🧹 Safe Clean", callback_data="clean")],
+        [InlineKeyboardButton("❓ Help", callback_data="help")]
+    ]
+    if ENABLE_DANGER:
+        rows.append([InlineKeyboardButton("⚠️ Danger Zone", callback_data="danger")])
     return InlineKeyboardMarkup(rows)
 
-def installer_menu():
+def _installer_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📦 Install Node", callback_data="inst_install")],
         [InlineKeyboardButton("🔄 Reinstall Node", callback_data="inst_reinstall")],
         [InlineKeyboardButton("♻ Update Node", callback_data="inst_update")],
         [InlineKeyboardButton("🧹 Uninstall Node", callback_data="inst_uninstall")],
-        [InlineKeyboardButton("🟢 Auto-Run Swarm", callback_data="inst_autorun")],
         [InlineKeyboardButton("⬅ Back", callback_data="back")]
     ])
 
-def swap_menu():
+def _danger_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("16G", callback_data="swap_16")],
-        [InlineKeyboardButton("32G", callback_data="swap_32")],
-        [InlineKeyboardButton("64G", callback_data="swap_64")],
-        [InlineKeyboardButton("Custom", callback_data="swap_custom")],
-        [InlineKeyboardButton("⬅ Back", callback_data="back")]
-    ])
-
-def danger_menu():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔥 Remove RL-Swarm", callback_data="dz_rm_node")],
+        [InlineKeyboardButton("🔥 Remove Node", callback_data="dz_rm_node")],
         [InlineKeyboardButton("🐋 Clean Docker", callback_data="dz_rm_docker")],
         [InlineKeyboardButton("💾 Remove Swap", callback_data="dz_rm_swap")],
         [InlineKeyboardButton("🧹 Full Clean", callback_data="dz_clean_all")],
-        [InlineKeyboardButton("🔁 Reboot VPS", callback_data="dz_reboot")],
+        [InlineKeyboardButton("💣 Reboot VPS", callback_data="dz_reboot")],
         [InlineKeyboardButton("⬅ Back", callback_data="back")]
     ])
 
-# --------------------
-# Handlers
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _authorized(update): return await update.message.reply_text("❌ Unauthorized.")
-    await update.message.reply_text("⚡ Deklan Suite — Main Menu", reply_markup=main_menu())
-
+# ======================================================
+# HANDLER UTAMA
+# ======================================================
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if not _authorized(update):
-        return await q.edit_message_text("❌ Unauthorized.")
+        return await q.edit_message_text("❌ Unauthorized access.")
+
     action = q.data
 
-    if action == "starter_missing":
-        ok, missing = check_starter_files()
-        txt = "Starter files missing:\n" + "\n".join(f"- {m}" for m in missing) + "\n\nUpload to /root/deklan and press 🔁 Check Again."
-        return await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Check Again", callback_data="check_again"), InlineKeyboardButton("⬅ Back", callback_data="back")]]))
-
-    if action == "check_again":
-        return await q.edit_message_text("Checking...", reply_markup=main_menu())
-
     if action == "status":
-        txt = system_stats()
-        return await q.edit_message_text(f"📊 System Status\n```\n{txt}\n```", parse_mode="Markdown", reply_markup=main_menu())
+        stats = _stats()
+        rnd   = _round()
+        panel = _panel(NODE_NAME, SERVICE_NODE, stats, rnd)
+        return await q.edit_message_text(panel, parse_mode="Markdown", reply_markup=_main_menu())
 
     if action == "start":
-        res = _shell(f"systemctl start {SERVICE_NAME} || true")
-        return await q.edit_message_text("🟢 Start requested.\n```\n" + res[-1500:] + "\n```", parse_mode="Markdown", reply_markup=main_menu())
+        _start()
+        return await q.edit_message_text("🟢 Node started", reply_markup=_main_menu())
 
     if action == "stop":
-        res = _shell(f"systemctl stop {SERVICE_NAME} || true")
-        return await q.edit_message_text("🔴 Stop requested.\n```\n" + res[-1500:] + "\n```", parse_mode="Markdown", reply_markup=main_menu())
+        _stop()
+        return await q.edit_message_text("🔴 Node stopped", reply_markup=_main_menu())
 
     if action == "restart":
-        res = _shell(f"systemctl restart {SERVICE_NAME} || true")
-        return await q.edit_message_text("🔁 Restart requested.\n```\n" + res[-1500:] + "\n```", parse_mode="Markdown", reply_markup=main_menu())
+        _restart()
+        return await q.edit_message_text("🔁 Restarting node...", reply_markup=_main_menu())
 
     if action == "logs":
-        res = _shell(f"journalctl -u {SERVICE_NAME} -n {LOG_LINES} --no-pager || true")
-        return await q.edit_message_text(f"📜 Last {LOG_LINES} lines\n```\n{res[-3500:]}\n```", parse_mode="Markdown", reply_markup=main_menu())
+        logs = _logs()
+        return await _send_long(q, f"📜 *Last logs*\n```\n{logs}\n```")
 
-    if action == "round":
-        res = _shell(f"journalctl -u {SERVICE_NAME} --no-pager | grep -E 'Joining round:' | tail -n1 || true")
-        return await q.edit_message_text(f"ℹ️ Round\n```\n{res}\n```", parse_mode="Markdown", reply_markup=main_menu())
-
-    if action == "safe_clean":
-        cmds = [
-            "docker image prune -f",
-            "docker container prune -f",
-            "apt autoremove -y",
-            "apt clean",
-            "journalctl --vacuum-size=200M",
-            "rm -rf /tmp/*"
-        ]
-        out = ""
-        for c in cmds:
-            out += f"$ {c}\n" + _shell(c) + "\n"
-        return await q.edit_message_text(f"✅ Safe clean done\n```\n{out[-3500:]}\n```", parse_mode="Markdown", reply_markup=main_menu())
-
-    if action == "swap":
-        return await q.edit_message_text("💾 Swap Manager", reply_markup=swap_menu())
-
-    if action.startswith("swap_"):
-        size = action.split("_",1)[1]
-        if size == "custom":
-            context.user_data["awaiting_swap_custom"] = True
-            return await q.edit_message_text("Enter custom swap size in GB (e.g. 48):")
-        try:
-            size_int = int(size)
-            out = set_swap(size_int)
-        except Exception as e:
-            out = f"Swap error: {e}"
-        return await q.edit_message_text(f"```\n{out}\n```", parse_mode="Markdown", reply_markup=main_menu())
+    if action == "clean":
+        res = _clean()
+        return await q.edit_message_text(res, reply_markup=_main_menu())
 
     if action == "installer":
-        return await q.edit_message_text("🧩 Installer", reply_markup=installer_menu())
+        return await q.edit_message_text("🧩 *Smart Installer*", parse_mode="Markdown", reply_markup=_installer_menu())
 
     if action.startswith("inst_"):
-        mode = action.split("_",1)[1]
-        if mode == "autorun":
-            ok, missing = check_starter_files()
-            if not ok:
-                return await q.edit_message_text("❌ Starter files missing. Upload them to /root/deklan and try again.", reply_markup=main_menu())
-            # run docker compose command
-            out = _shell(DOCKER_COMPOSE_CMD)
-            return await q.edit_message_text(f"🚀 Auto-Run Swarm\n```\n{out[-3500:]}\n```", parse_mode="Markdown", reply_markup=main_menu())
-        else:
-            # remote installer actions: install.sh, reinstall.sh, update.sh, uninstall.sh
-            mapping = {
-                "install": "install.sh",
-                "reinstall": "reinstall.sh",
-                "update": "update.sh",
-                "uninstall": "uninstall.sh"
-            }
-            fname = mapping.get(mode, "install.sh")
-            # download and run
-            url = os.getenv("AUTO_INSTALLER_GITHUB", "https://raw.githubusercontent.com/deklan400/deklan-autoinstall/main/") + fname
-            tmp = f"/tmp/{fname}"
-            try:
-                subprocess.check_output(f"curl -s -o {tmp} {url}", shell=True)
-                subprocess.check_output(f"chmod +x {tmp}", shell=True)
-                out = subprocess.check_output(f"bash {tmp}", shell=True, stderr=subprocess.STDOUT, text=True)
-            except subprocess.CalledProcessError as e:
-                out = e.output or str(e)
-            return await q.edit_message_text(f"📦 Installer result\n```\n{out[-3500:]}\n```", parse_mode="Markdown", reply_markup=main_menu())
+        mode = action.split("_", 1)[1]
+        context.user_data["pending_inst"] = mode
+        return await q.edit_message_text(f"⚠ Confirm `{mode.upper()}`?\n\nType *YES* to proceed.", parse_mode="Markdown")
 
-    if action == "back":
-        return await q.edit_message_text("Main Menu", reply_markup=main_menu())
-
-    if action == "dz":
-        return await q.edit_message_text("Danger Zone", reply_markup=danger_menu())
+    if action == "danger":
+        return await q.edit_message_text("⚠️ *Danger Zone*", parse_mode="Markdown", reply_markup=_danger_menu())
 
     if action.startswith("dz_"):
-        context.user_data["awaiting_danger_pass"] = action
-        return await q.edit_message_text("Enter danger password:")
+        # Danger actions require password via text handler flow
+        context.user_data["awaiting_password"] = action
+        return await q.edit_message_text(f"⚠️ `{action.replace('dz_', '').upper()}` — Enter Danger Password:", parse_mode="Markdown")
 
-    if action == "inst_autorun":
-        # same as autorun
-        ok, missing = check_starter_files()
-        if not ok:
-            return await q.edit_message_text("Starter missing: " + ", ".join(missing))
-        out = _shell(DOCKER_COMPOSE_CMD)
-        return await q.edit_message_text(f"Auto-Run:\n```\n{out[-3500:]}\n```", parse_mode="Markdown", reply_markup=main_menu())
+    if action == "back":
+        return await q.edit_message_text("⚡ Main Menu", reply_markup=_main_menu())
 
-    return await q.edit_message_text(f"Unknown action: {action}", reply_markup=main_menu())
+# ======================================================
+# TEXT HANDLER
+# ======================================================
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
 
+    # Installer confirm flow
+    if "pending_inst" in context.user_data:
+        mode = context.user_data.pop("pending_inst")
+        if text.upper() != "YES":
+            return await update.message.reply_text("❌ Cancelled.")
+        fname = {
+            "install": "install.sh",
+            "reinstall": "reinstall.sh",
+            "update": "update.sh",
+            "uninstall": "uninstall.sh"
+        }.get(mode, "install.sh")
+        result = _run_remote(fname)
+        return await _send_long(update, f"✅ Done\n```\n{result}\n```")
 
-async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    txt = update.message.text.strip()
-    # custom swap
-    if context.user_data.pop("awaiting_swap_custom", None):
-        try:
-            gbs = int(txt)
-            out = set_swap(gbs)
-        except:
-            out = "Invalid number"
-        return await update.message.reply_text(f"```\n{out}\n```", parse_mode="Markdown")
-    if context.user_data.get("awaiting_danger_pass"):
-        action = context.user_data.pop("awaiting_danger_pass")
-        if txt != DANGER_PASS:
+    # Awaiting danger password
+    if "awaiting_password" in context.user_data:
+        action = context.user_data.pop("awaiting_password")
+        if text != DANGER_PASS:
             return await update.message.reply_text("❌ Wrong password")
-        act = action.replace("dz_","")
-        if act == "rm_node":
-            _shell("systemctl stop gensyn || true; rm -rf /root/rl-swarm || true")
-            return await update.message.reply_text("Node removed")
-        if act == "rm_docker":
-            out = _shell("docker ps -aq | xargs -r docker rm -f; docker system prune -af")
-            return await update.message.reply_text(f"```\n{out}\n```", parse_mode="Markdown")
-        if act == "rm_swap":
-            out = _shell("swapoff -a; rm -f /swapfile; sed -i '/swapfile/d' /etc/fstab")
-            return await update.message.reply_text("Swap removed")
-        if act == "clean_all":
-            out = _shell("systemctl stop gensyn || true; rm -rf /root/rl-swarm || true; docker system prune -af; swapoff -a; rm -f /swapfile")
-            return await update.message.reply_text("Full clean done")
-        if act == "reboot":
+        await update.message.reply_text("✅ Verified! Running…")
+        if action == "dz_rm_node":
+            res = _shell(
+                f"systemctl stop {SERVICE_NODE}; "
+                f"systemctl disable {SERVICE_NODE}; "
+                f"rm -f /etc/systemd/system/{SERVICE_NODE}.service; "
+                f"systemctl daemon-reload; "
+                f"rm -rf {RL_DIR}"
+            )
+        elif action == "dz_rm_docker":
+            res = _shell("docker ps -aq | xargs -r docker rm -f; docker system prune -af")
+        elif action == "dz_rm_swap":
+            res = _shell("swapoff -a; rm -f /swapfile; sed -i '/swapfile/d' /etc/fstab")
+        elif action == "dz_clean_all":
+            res = _shell(
+                f"systemctl stop {SERVICE_NODE}; "
+                f"rm -rf {RL_DIR}; "
+                f"docker system prune -af; "
+                f"swapoff -a; rm -f /swapfile"
+            )
+        elif action == "dz_reboot":
             _shell("reboot")
-            return await update.message.reply_text("Rebooting...")
+            res = "Rebooting…"
+        else:
+            res = "Unknown danger action"
+        return await _send_long(update, f"✅ Done\n```\n{res}\n```")
 
+    # Default fallback
     return
 
-# --------------------
-# Helpers: swap
-def set_swap(size_gb: int) -> str:
-    try:
-        size_mb = size_gb * 1024
-        cmds = [
-            "swapoff -a",
-            "sed -i '/swapfile/d' /etc/fstab || true",
-            "rm -f /swapfile || true",
-            f"fallocate -l {size_gb}G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count={size_mb}",
-            "chmod 600 /swapfile",
-            "mkswap /swapfile",
-            "swapon /swapfile",
-            "echo '/swapfile none swap sw 0 0' >> /etc/fstab"
-        ]
-        out = ""
-        for c in cmds:
-            out += f"$ {c}\n"
-            out += _shell(c) + "\n"
-        return out
-    except Exception as e:
-        return f"Swap error: {e}"
-
-# --------------------
-# Main
+# ======================================================
+# MAIN
+# ======================================================
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start_cmd))
+    # Handlers
     app.add_handler(CallbackQueryHandler(handle_button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
-    print("Bot running...")
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    print("✅ DEKLAN-SUITE BOT v3.1 running...")
     app.run_polling()
 
 if __name__ == "__main__":
