@@ -1,15 +1,22 @@
 [Unit]
-Description=Deklan Suite Bot
+Description=Deklan Suite Bot (Telegram Control)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/deklan-suite
-ExecStart=/usr/bin/python3 /root/deklan-suite/bot.py
+Group=root
+WorkingDirectory=/opt/deklan-node-bot
+EnvironmentFile=-/opt/deklan-node-bot/.env
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONIOENCODING=UTF-8"
+
+ExecStart=/opt/deklan-node-bot/.venv/bin/python /opt/deklan-node-bot/bot.py
 Restart=always
-RestartSec=5
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
 LimitNOFILE=65535
 
 [Install]
