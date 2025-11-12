@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ########################################################################################
-# 💣  DEKLAN-SUITE UNINSTALL — v6 (Fusion)
-# Remove RL-Swarm Node + Bot + Monitor + Docker (optional identity wipe)
+# 💣  DEKLAN-SUITE UNINSTALL — v6.2 (Fusion Stable)
+# Cleanly remove RL-Swarm Node + Telegram Bot + Monitor + Docker (safe identity handling)
 # by Deklan × GPT-5
 ########################################################################################
 
@@ -26,7 +26,7 @@ info() { echo -e "${CYAN}$1${NC}"; }
 
 info "
 =====================================================
- 💣  DEKLAN-SUITE UNINSTALL — v6 (Fusion)
+ 💣  DEKLAN-SUITE UNINSTALL — v6.2 (Fusion Stable)
 =====================================================
 "
 
@@ -40,7 +40,7 @@ for svc in "$SERVICE_NODE" "$SERVICE_BOT" "$SERVICE_MONITOR" "$SERVICE_TIMER"; d
   if systemctl list-unit-files | grep -q "^${svc}"; then
     systemctl stop "$svc" 2>/dev/null || true
     systemctl disable "$svc" 2>/dev/null || true
-    msg "Removed service → $svc"
+    msg "Service disabled → $svc"
   else
     warn "Service not found → $svc"
   fi
@@ -52,7 +52,7 @@ systemctl daemon-reload
 msg "Systemd entries cleaned ✅"
 
 # ───────────────────────────────────────────────────────────────
-# 2. Remove RL-Swarm folder
+# 2. Remove RL-Swarm
 # ───────────────────────────────────────────────────────────────
 info "[2/6] Removing RL-Swarm directory…"
 if [[ -d "$RL_DIR" ]]; then
@@ -63,7 +63,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────
-# 3. Remove bot folder
+# 3. Remove Bot directory
 # ───────────────────────────────────────────────────────────────
 info "[3/6] Removing Telegram bot directory…"
 if [[ -d "$BOT_DIR" ]]; then
@@ -74,7 +74,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────
-# 4. Optional: remove identity
+# 4. Optional: Remove identity
 # ───────────────────────────────────────────────────────────────
 info "[4/6] Identity folder → $KEY_DIR"
 if [[ "$REMOVE_KEYS" == "1" ]]; then
@@ -89,32 +89,39 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────
-# 5. Docker cleanup
+# 5. Docker Cleanup
 # ───────────────────────────────────────────────────────────────
 info "[5/6] Cleaning Docker resources…"
 if command -v docker >/dev/null 2>&1; then
   docker ps -a --filter "name=swarm-cpu" -q | xargs -r docker rm -f >/dev/null 2>&1 || true
-  docker image prune -f >/dev/null 2>&1 || true
-  docker container prune -f >/dev/null 2>&1 || true
-  docker network prune -f >/dev/null 2>&1 || true
+  docker system prune -af --volumes >/dev/null 2>&1 || true
   msg "Docker cleaned ✅"
 else
   warn "Docker not installed → skip"
 fi
 
 # ───────────────────────────────────────────────────────────────
-# 6. Final cleanup summary
+# 6. System & Cache Cleanup
+# ───────────────────────────────────────────────────────────────
+info "[6/6] Cleaning system junk…"
+rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+apt autoremove -y >/dev/null 2>&1 || true
+apt clean >/dev/null 2>&1 || true
+journalctl --vacuum-size=150M >/dev/null 2>&1 || true
+msg "System cache cleaned ✅"
+
+# ───────────────────────────────────────────────────────────────
+# 🎯 Summary
 # ───────────────────────────────────────────────────────────────
 echo -e "
 ${GREEN}=====================================================
- ✅ UNINSTALL COMPLETE — DEKLAN-SUITE v6
+ ✅ UNINSTALL COMPLETE — DEKLAN-SUITE v6.2
 =====================================================
-✔ RL-Swarm node removed
-✔ Bot & monitor services cleaned
-✔ Docker pruned
-✔ Symlinks removed
+✔ Node, Bot, and Monitor removed
+✔ Docker fully cleaned
+✔ System junk purged
 ✔ Identity kept (unless REMOVE_KEYS=1)
-
+-----------------------------------------------------
 🧭 To reinstall later:
   bash <(curl -fsSL https://raw.githubusercontent.com/deklan400/deklan-suite/main/install.sh)
 =====================================================
