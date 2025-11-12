@@ -1,0 +1,14 @@
+[Unit]
+Description=⏱ Run Deklan Suite Monitor periodically
+After=network-online.target
+
+[Timer]
+# Jalankan 2 menit setelah boot, lalu ulang tiap 3 jam
+OnBootSec=2min
+OnUnitActiveSec=3h
+RandomizedDelaySec=30
+Persistent=true
+Unit=monitor.service
+
+[Install]
+WantedBy=timers.target
