@@ -1,55 +1,107 @@
 #!/usr/bin/env bash
 set -euo pipefail
-#######################################################################################
-# 🔄 DEKLAN-SUITE  RESTART — v6  (Node + Bot + Monitor)
-#######################################################################################
+
+######################################################################################
+# 🔁  DEKLAN-SUITE RESTART — v6 (Fusion)
+# Restart full stack: RL-Swarm Node + Bot + Monitor Timer
+# by Deklan × GPT-5
+######################################################################################
 
 SERVICES=("gensyn" "bot" "monitor.timer")
-RL_DIR="/root/rl-swarm"
-KEY_DIR="/root/deklan"
-REQ_KEYS=("swarm.pem" "userApiKey.json" "userData.json")
+DOCKER_CLEAN=1  # set 0 to skip docker cleanup
 
 GREEN="\e[32m"; RED="\e[31m"; YELLOW="\e[33m"; CYAN="\e[36m"; NC="\e[0m"
-say(){ echo -e "${GREEN}✅ $1${NC}"; }; warn(){ echo -e "${YELLOW}⚠ $1${NC}"; }
-fail(){ echo -e "${RED}❌ $1${NC}"; exit 1; }; note(){ echo -e "${CYAN}$1${NC}"; }
+msg(){ echo -e "${GREEN}✅ $1${NC}"; }
+warn(){ echo -e "${YELLOW}⚠ $1${NC}"; }
+fail(){ echo -e "${RED}❌ $1${NC}"; exit 1; }
+info(){ echo -e "${CYAN}$1${NC}"; }
 
-echo -e "
-========================================================
-🔄  DEKLAN-SUITE — RESTART ALL SERVICES (v6)
-========================================================
-Time: $(date)
+info "
+=====================================================
+ 🔁  DEKLAN-SUITE RESTART — v6 (Fusion)
+=====================================================
 "
 
 [[ $EUID -ne 0 ]] && fail "Run as ROOT!"
 
-# ── Check identity
-for f in "${REQ_KEYS[@]}"; do [[ -f "$KEY_DIR/$f" ]] || fail "Missing → $KEY_DIR/$f"; done
-say "Identity OK ✅"
-
-# ── Fix keys
-rm -rf "$RL_DIR/keys" 2>/dev/null || true
-ln -s "$KEY_DIR" "$RL_DIR/keys"
-say "Symlink OK ✅"
-
-# ── Clean Docker zombies
-note "[*] Cleaning Docker containers…"
-docker ps -aq | xargs -r docker rm -f >/dev/null 2>&1 || true
-say "Docker cleanup OK ✅"
-
-# ── Restart all
+# ───────────────────────────────────────────────────────────────
+# 1. Stop all services
+# ───────────────────────────────────────────────────────────────
+info "[1/5] Stopping services…"
 for svc in "${SERVICES[@]}"; do
-  note "[*] Restarting $svc ..."
-  systemctl daemon-reload
-  systemctl restart "$svc" || warn "$svc failed restart"
-  sleep 2
-  systemctl is-active --quiet "$svc" && say "$svc running ✅" || warn "$svc inactive ⚠"
+  if systemctl is-active --quiet "$svc"; then
+    systemctl stop "$svc" >/dev/null 2>&1 && msg "Stopped → $svc"
+  else
+    warn "$svc already stopped"
+  fi
 done
 
-# ── Optional tail
-if [[ "${1:-}" == "-f" ]]; then
-  note "[*] Tailing all logs (Ctrl+C exit)…"
-  journalctl -u gensyn -u bot -u monitor.timer -f
+# ───────────────────────────────────────────────────────────────
+# 2. Optional Docker cleanup
+# ───────────────────────────────────────────────────────────────
+if [[ "$DOCKER_CLEAN" -eq 1 ]]; then
+  info "[2/5] Cleaning stale Docker objects…"
+  docker container prune -f >/dev/null 2>&1 || true
+  docker image prune -f >/dev/null 2>&1 || true
+  msg "Docker cleaned ✅"
+else
+  warn "Docker cleanup skipped"
 fi
 
-say "All services restarted ✅"
-echo "➡ To follow logs: journalctl -u bot -f"
+# ───────────────────────────────────────────────────────────────
+# 3. Reload daemon + start services sequentially
+# ───────────────────────────────────────────────────────────────
+info "[3/5] Reloading systemd…"
+systemctl daemon-reload
+
+info "[4/5] Starting all services…"
+for svc in "${SERVICES[@]}"; do
+  systemctl enable --now "$svc" >/dev/null 2>&1 || warn "$svc enable failed"
+  sleep 2
+  if systemctl is-active --quiet "$svc"; then
+    msg "Running → $svc"
+  else
+    warn "$svc failed to start"
+  fi
+done
+
+# ───────────────────────────────────────────────────────────────
+# 4. Display status summary
+# ───────────────────────────────────────────────────────────────
+info "[5/5] Final status snapshot:"
+
+printf "\n${CYAN}%-20s%-15s${NC}\n" "Service" "Status"
+printf "${CYAN}%-20s%-15s${NC}\n" "────────────────────" "─────────────"
+
+for svc in "${SERVICES[@]}"; do
+  st=$(systemctl is-active "$svc" 2>/dev/null || echo "unknown")
+  if [[ "$st" == "active" ]]; then
+    printf "${GREEN}%-20s%-15s${NC}\n" "$svc" "✅ active"
+  else
+    printf "${RED}%-20s%-15s${NC}\n" "$svc" "❌ $st"
+  fi
+done
+
+# ───────────────────────────────────────────────────────────────
+# 5. Uptime summary
+# ───────────────────────────────────────────────────────────────
+UP=$(uptime -p 2>/dev/null || true)
+FREE=$(df -h / | tail -1 | awk '{print $4}')
+echo -e "
+──────────────────────────────
+🕒  Uptime : ${UP:-unknown}
+💾  Free   : $FREE
+──────────────────────────────
+"
+
+msg "All processes refreshed successfully!"
+
+echo -e "
+${GREEN}=====================================================
+ ✅ RESTART COMPLETE — DEKLAN-SUITE v6
+=====================================================
+Check logs:
+  journalctl -u gensyn -n 20 --no-pager
+  journalctl -u bot -n 20 --no-pager
+${NC}
+"
