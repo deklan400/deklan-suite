@@ -1,5 +1,5 @@
 [Unit]
-Description=Deklan Suite Bot (Telegram Control)
+Description=🧠 Deklan Suite Bot (Fusion Telegram Control)
 After=network-online.target
 Wants=network-online.target
 
@@ -8,13 +8,30 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/deklan-node-bot
+
+# Load environment variables
 EnvironmentFile=-/opt/deklan-node-bot/.env
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONIOENCODING=UTF-8"
+Environment="PATH=/opt/deklan-node-bot/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 
-ExecStart=/opt/deklan-node-bot/.venv/bin/python /opt/deklan-node-bot/bot.py
+# Smart start — fallback to system Python if venv broken
+ExecStart=/bin/bash -c '
+  PYBIN="/opt/deklan-node-bot/.venv/bin/python"
+  if [ -x "$PYBIN" ]; then
+      echo "[BOT] Using virtualenv Python"
+      exec "$PYBIN" "/opt/deklan-node-bot/bot.py"
+  else
+      echo "[BOT] Using system Python"
+      exec /usr/bin/python3 "/opt/deklan-node-bot/bot.py"
+  fi
+'
+
 Restart=always
-RestartSec=3
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
 StandardOutput=journal
 StandardError=journal
 LimitNOFILE=65535
