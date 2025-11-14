@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ########################################################################################
-# 🚀 DEKLAN-SUITE INSTALLER — v6.2 (Fusion Stable)
+# 🚀 DEKLAN-SUITE INSTALLER — v6.3 (Fusion + Gensyn Integration)
 # Gensyn RL-Swarm (CPU) + Telegram Bot + Monitor (service & timer)
 # by Deklan × GPT-5
 ########################################################################################
@@ -29,7 +29,7 @@ info(){ echo -e "${CYAN}$1${NC}"; }
 
 info "
 =====================================================
-🔥  DEKLAN-SUITE INSTALLER — v6.2 (Fusion Stable)
+🔥  DEKLAN-SUITE INSTALLER — v6.3 (Fusion + Gensyn)
 =====================================================
 "
 
@@ -163,7 +163,7 @@ chmod 600 "$BOT_DIR/.env"
 msg ".env created ✅"
 
 # ──────────────────────────────────────────────────────────────
-info "[7b/9] Installing bot.service (v6.2 fixed paths)…"
+info "[7b/9] Installing bot.service (v6.3 fixed paths)…"
 cat >"/etc/systemd/system/${SERVICE_BOT}.service" <<EOF
 [Unit]
 Description=Deklan Suite Bot (Telegram Control)
@@ -225,13 +225,25 @@ systemctl enable --now monitor.timer
 msg "Monitor timer installed ✅"
 
 # ──────────────────────────────────────────────────────────────
+info "[9/9] Installing Gensyn Setup Integration…"
+mkdir -p "$BOT_DIR/scripts"
+
+# Fetch setup_gensyn.sh (original version)
+curl -fsSL "https://raw.githubusercontent.com/deklan400/deklan-suite/main/scripts/setup_gensyn.sh" \
+  -o "$BOT_DIR/scripts/setup_gensyn.sh" || warn "⚠ Failed to fetch setup_gensyn.sh"
+
+chmod +x "$BOT_DIR/scripts/setup_gensyn.sh"
+msg "Gensyn setup script ready ✅"
+
+# ──────────────────────────────────────────────────────────────
 echo -e "
 ${GREEN}=====================================================
- ✅ INSTALL COMPLETE — DEKLAN-SUITE v6.2 (Fusion Stable)
+ ✅ INSTALL COMPLETE — DEKLAN-SUITE v6.3 (Fusion + Gensyn)
 =====================================================
 ✔ RL-Swarm Node
 ✔ Telegram Control Bot
 ✔ Auto Monitor Timer
+✔ Gensyn Setup Integration
 -----------------------------------------------------
 systemctl status $SERVICE_NODE --no-pager
 systemctl status $SERVICE_BOT --no-pager
